@@ -2,37 +2,58 @@ name: XServer Extend Schedule
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs every 24 hours at 00:00 UTC
-  workflow_dispatch: # Allows manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   extend-server:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    # 1. 第一步先拉取公开库自己 (获取 package.json)
+    - name: 📥 Checkout Public Repo
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
+    # 2. 第二步拉取私库 (获取 action.js)
+    - name: 📥 Download Private Script
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.repository_owner }}/Renew-Private # 你的私库名
+        token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        path: private_temp
+
+    # 3. 将私库里的 action.js 移动到当前根目录（与 package.json 同级）
+    - name: 📂 Move Private Script
+      run: |
+        mv private_temp/action.js ./action.js
+        # 如果还有其他私有文件，也可以在这里 mv 过来
+
+    # 4. 设置 Node.js 环境（此时根目录下已经有 package.json 了）
+    - name: 🟢 Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm' # 自动缓存 node_modules
 
-    - name: Install dependencies
+    # 5. 安装依赖
+    - name: 📦 Install dependencies
       run: npm install
 
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps chrome
+    # 6. 安装 Playwright 浏览器
+    - name: 🛠️ Install Playwright Browsers
+      run: npx playwright install --with-deps chromium
 
-    - name: Run Extension Script
+    # 7. 运行脚本
+    - name: 🚀 Run Extension Script
       env:
         USERS_JSON: ${{ secrets.USERS_JSON }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: node action.js
 
-    - name: Upload Screenshots
-      if: always() # Run even if the script fails
+    # 8. 上传截图
+    - name: 📸 Upload Screenshots
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: screenshots
