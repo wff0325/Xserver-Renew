@@ -2,9 +2,8 @@ name: XServer Extend Schedule
 
 on:
   schedule:
-    # 日本时间 (JST) 每天凌晨 02:00 运行
-    # 对应 UTC 时间为前一天 17:00
-    - cron: '0 17 * * *'
+    # 日本时间每天 02:00 和 14:00 各运行一次
+    - cron: '0 5,17 * * *'
   workflow_dispatch: # 允许手动触发测试
 
 jobs:
