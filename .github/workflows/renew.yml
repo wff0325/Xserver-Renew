@@ -2,60 +2,59 @@ name: XServer Extend Schedule
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    # 日本时间 (JST) 每天凌晨 02:00 运行
+    # 对应 UTC 时间为前一天 17:00
+    - cron: '0 17 * * *'
+  workflow_dispatch: # 允许手动触发测试
 
 jobs:
   extend-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # 脚本执行超限自动停止，防止扣费
 
     steps:
-    # 1. 第一步先拉取公开库自己 (获取 package.json)
-    - name: 📥 Checkout Public Repo
+    - name: 📥 1. 下载公开库 (获取 package.json)
       uses: actions/checkout@v4
 
-    # 2. 第二步拉取私库 (获取 action.js)
-    - name: 📥 Download Private Script
+    - name: 📥 2. 下载私库 (获取 action.js)
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.repository_owner }}/Renew-Private # 你的私库名
+        repository: ${{ github.repository_owner }}/Renew-Private # 替换为你的私库名
         token: ${{ secrets.PRIVATE_REPO_TOKEN }}
         path: private_temp
 
-    # 3. 将私库里的 action.js 移动到当前根目录（与 package.json 同级）
-    - name: 📂 Move Private Script
+    - name: 📂 3. 移动脚本到根目录
       run: |
         mv private_temp/action.js ./action.js
-        # 如果还有其他私有文件，也可以在这里 mv 过来
+        # 如果私库还有其他依赖文件，请在这里一并 mv 过来
 
-    # 4. 设置 Node.js 环境（此时根目录下已经有 package.json 了）
-    - name: 🟢 Setup Node.js
+    - name: 🟢 4. 设置 Node.js 环境
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm' # 自动缓存 node_modules
+        cache: 'npm' # 因为 package.json 在根目录，缓存会自动生效
 
-    # 5. 安装依赖
-    - name: 📦 Install dependencies
+    - name: 📦 5. 安装依赖
+      # 这会安装你 package.json 里的 playwright 1.57.0
       run: npm install
 
-    # 6. 安装 Playwright 浏览器
-    - name: 🛠️ Install Playwright Browsers
+    - name: 🛠️ 6. 安装 Playwright 浏览器组件
+      # 它会自动安装匹配 1.57.0 版本的 Chromium 及其 Linux 系统依赖
       run: npx playwright install --with-deps chromium
 
-    # 7. 运行脚本
-    - name: 🚀 Run Extension Script
+    - name: 🚀 7. 运行续费脚本
       env:
+        # 这里务必在公开库的 Secrets 里配置好
         USERS_JSON: ${{ secrets.USERS_JSON }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        PYTHONIOENCODING: utf-8
       run: node action.js
 
-    # 8. 上传截图
-    - name: 📸 Upload Screenshots
+    - name: 📸 8. 上传截图 (用于调试)
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: screenshots
+        name: xserver-debug-screenshots
         path: "*.png"
-        retention-days: 5
+        retention-days: 3 # 节省 GitHub 空间
