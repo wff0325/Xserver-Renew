@@ -2,58 +2,101 @@ name: XServer Extend Schedule
 
 on:
   schedule:
-    # 日本时间每天 02:00 和 14:00 各运行一次
-    - cron: '0 5,17 * * *'
-  workflow_dispatch: # 允许手动触发测试
+    # 初始运行时间，之后会被脚本自动修改
+    - cron: '0 5 * * *' 
+  workflow_dispatch: # 允许手动触发
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
   extend-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # 脚本执行超限自动停止，防止扣费
+    timeout-minutes: 15
 
     steps:
-    - name: 📥 1. 下载公开库 (获取 package.json)
+    - name: 📥 1. 下载公开库
       uses: actions/checkout@v4
 
-    - name: 📥 2. 下载私库 (获取 action.js)
+    - name: 📥 2. 下载私库
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.repository_owner }}/Renew-Private # 替换为你的私库名
+        repository: ${{ github.repository_owner }}/Renew-Private
         token: ${{ secrets.PRIVATE_REPO_TOKEN }}
         path: private_temp
 
     - name: 📂 3. 移动脚本到根目录
       run: |
         mv private_temp/action.js ./action.js
-        # 如果私库还有其他依赖文件，请在这里一并 mv 过来
 
     - name: 🟢 4. 设置 Node.js 环境
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm' # 因为 package.json 在根目录，缓存会自动生效
+        cache: 'npm'
 
     - name: 📦 5. 安装依赖
-      # 这会安装你 package.json 里的 playwright 1.57.0
       run: npm install
 
     - name: 🛠️ 6. 安装 Playwright 浏览器组件
-      # 它会自动安装匹配 1.57.0 版本的 Chromium 及其 Linux 系统依赖
       run: npx playwright install --with-deps chromium
 
-    - name: 🚀 7. 运行续费脚本
+    - name: 🚀 7. 运行续费脚本并记录日志
       env:
-        # 这里务必在公开库的 Secrets 里配置好
         USERS_JSON: ${{ secrets.USERS_JSON }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         PYTHONIOENCODING: utf-8
-      run: node action.js
+      # 将输出同时打印到屏幕和文件 renew.log
+      run: node action.js 2>&1 | tee renew.log
 
-    - name: 📸 8. 上传截图 (用于调试)
+    - name: 🔄 8. 提取时间并更新下次运行的 Cron
+      if: always()
+      run: |
+        # 从日志中提取时间 (格式如: 2026-05-02 23:30)
+        # 假设你的 js 脚本输出包含 "下次延长时间在: 2026-05-02 23:30"
+        RAW_TIME=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' renew.log | tail -1)
+        
+        if [ -z "$RAW_TIME" ]; then
+          echo "未发现下次续期时间，保持当前计划。"
+          exit 0
+        fi
+
+        echo "检测到下次可续期时间 (日本时间): $RAW_TIME"
+
+        # XServer 时间是日本时间 (JST, UTC+9)，需要转换为 UTC 给 GitHub 使用
+        # 我们设定在目标时间之后的 10 分钟运行，防止由于误差导致提早运行
+        
+        # 转换 JST 为 UTC
+        UTC_TIME=$(date -d "$RAW_TIME -9 hours + 10 minutes" +"%M %H %d %m *")
+        
+        # 分离出各个部分用于替换
+        M=$(echo $UTC_TIME | cut -d' ' -f1)
+        H=$(echo $UTC_TIME | cut -d' ' -f2)
+        D=$(echo $UTC_TIME | cut -d' ' -f3)
+        MONTH=$(echo $UTC_TIME | cut -d' ' -f4)
+        
+        NEW_CRON="$M $H $D $MONTH *"
+        echo "生成的 UTC Cron: $NEW_CRON"
+
+        # 修改 YML 文件 (注意：这里的路径要对应你这个 yml 文件的文件名)
+        FILENAME=".github/workflows/XServer_Extend.yml"
+        sed -i "s/cron: '.*'/cron: '$NEW_CRON'/g" $FILENAME
+
+        # 提交更改
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add $FILENAME
+        git commit -m "🔄 自动更新 XServer 下次续期时间: $RAW_TIME (JST)" || echo "无需更新"
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }} # 使用你有写入权限的 Token
+
+    - name: 📸 9. 上传截图 (用于调试)
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: xserver-debug-screenshots
         path: "*.png"
-        retention-days: 3 # 节省 GitHub 空间
+        retention-days: 3
