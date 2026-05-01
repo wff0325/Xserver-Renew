@@ -90,7 +90,7 @@ jobs:
         fi
         
         # 4. 修改文件中的 Cron 表达式
-        sed -i "s@cron: '.*'@cron: '$NEW_CRON'@g" "$FILENAME"
+        sed -i "s@cron: '40 14 02 05 *'@g" "$FILENAME"
 
         # 5. 提交更改并强制使用高级 Token 推送
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
