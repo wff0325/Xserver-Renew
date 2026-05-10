@@ -3,7 +3,7 @@ name: XServer Auto Renew
 on:
   schedule:
     # 初始运行时间，成功后会自动被脚本修改
-    - cron: '40 14 10 05 *'
+    - cron: '40 14 13 05 *'
   workflow_dispatch: 
 
 # 赋予基础读写权限
